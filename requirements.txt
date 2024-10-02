@@ -1,0 +1,6 @@
+lmfit
+scipy
+numpy
+mpl_point_clicker
+matplotlib
+sklearn
