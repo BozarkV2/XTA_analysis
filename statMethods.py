@@ -47,23 +47,21 @@ def svdCorr(data,comp = 10,threshold=0.95):
        
     return n_comp,pca
     
-def fitPCA(data,energy,components = 20,transAbs=None,
-           threshold=0.95,time=None,pca=None,quiet=False):
+def fitPCA(data, ref, energy,components = 20,transAbs=None,
+           threshold=0.95, maxIter=None,
+           time=None,pca=None,quiet=False):
     
-    pumpON = np.where(data[:,0::2] == 0,  1, data[:,0::2])
-    pumpOFF = np.where(data[:,1::2] == 0,  1, data[:,1::2])
-    
-    pumpOffAbs = -np.log10(np.abs(pumpOFF[:,0::2]/pumpOFF[:,1::2]))
+    pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
     
     if transAbs==None:
-        transAbs = -np.log10(np.abs(pumpON/pumpOFF))
+        transAbs = -np.log10(np.abs(data/ref))
     
     if pca is None:
         pca = PCA(components).fit(np.transpose(pumpOffAbs))
 
     OD_PC = pca.components_.T    
     
-    ROI = getMask(energy,pumpON[:,0],
+    ROI = getMask(energy,data[:,0],
                   title=""""Select energies to exclude for PCA fit,
                       must be in pairs to denote a range""")
     
@@ -73,13 +71,11 @@ def fitPCA(data,energy,components = 20,transAbs=None,
     for x,y in zip(lowE,highE):
         tempMask = np.where(np.logical_or((energy< x), (energy>y)),
                             1,0)
-        # maskData[tempMask] = data[tempMask]
         W_k = np.diag(tempMask)    
 
     C = np.linalg.inv(OD_PC.T.dot(W_k.dot(OD_PC))).dot(
         OD_PC.T).dot(W_k).dot(transAbs)
     
-    # result = minimize(PCAresid,params,args = (maskData,n_comps,pca,ROI))
     model = OD_PC.dot(C)
     
     if quiet is False:
@@ -93,57 +89,127 @@ def fitPCA(data,energy,components = 20,transAbs=None,
        
         if time is not None:
             tempTrans = np.reshape(transAbs, (len(energy),
-                                           int(pumpON.shape[1]/len(time)),
+                                           int(data.shape[1]/len(time)),
                                            len(time)))
             tempModel = np.reshape(model, (len(energy),
-                                           int(pumpON.shape[1]/len(time)),
+                                           int(data.shape[1]/len(time)),
                                            len(time)))
             trans2D = np.nanmean(tempTrans,axis=1)
             model2D = np.nanmean(tempModel,axis=1)
             fig2,bx = plt.subplots(5,1,sharex=True)
             for idx,axis in enumerate(bx):
-                axis.plot(energy,trans2D[:,idx],label=str(time[idx]))
-                axis.plot(energy,model2D[:,idx])
+                axis.plot(energy,trans2D[:,-idx],label=str(time[-idx]))
+                axis.plot(energy,model2D[:,-idx])
                 
                 for x,y in zip(lowE,highE):
-                    axis.fill_betweenx([np.min(trans2D[:,idx]),np.max(trans2D[:,idx])],
+                    axis.fill_betweenx([np.min(trans2D[:,-idx]),
+                                        np.max(trans2D[:,-idx])],
                                       x,y,color='r',alpha=0.2)
                 axis.legend()
         
     return transAbs-model
 
-def airPCA(data,energy,components = 10,maxIter=80,
-           threshold=0.95,
-           pca=None,quiet=False):
+def airPCA(data, ref, energy, components = 20, maxIter=40, time=None,
+           threshold=0.95, transAbs=None,
+           pca=None, quiet=False):
     
-    pumpON = data[:,0::2]
-    pumpOFF = data[:,1::2]
+    pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
     
-    pumpOffAbs = -np.log10(pumpOFF[:,0::2]/pumpOFF[:,1::2])
-    transAbs = -np.log10(pumpON/pumpOFF)
-    
-    k_vect = np.arange(maxIter)
-    vector = [1+0.2]**k_vect
+    if transAbs is None:
+        transAbs = -np.log10(np.abs(data/ref))
     
     if pca is None:
         pca = PCA(components).fit(np.transpose(pumpOffAbs))
 
     OD_PC = pca.components_.T    
     
-    pcaWeights = np.ones(len(pumpON))
+    Nt = np.shape(time)[0]
+    n, scans = np.shape(transAbs)
+    Ns = int(scans/Nt)
     
-    W_k = np.diag(pcaWeights)    
+    tempTrans = np.reshape(transAbs, 
+                           (n,Ns,Nt))
+    trans2D = np.nanmean(tempTrans,axis=1)
+    
+    k_max = maxIter                             # maximum number of iterations
+    c = 0.2                                     # constant c
+    k_vect = np.arange(k_max)                   # vector of increasing steps k
+    vector = (1+c)**k_vect                  # constant alpha(k)
+    k_opt = 45                                  # optimum k where the optimum result is found
+    stop_at_opt = False                         # if True, the iteration stops when the optimum k is reached
+    
+    w = []                                      # array where the effective number of pixels is stored
+    d_norm = []                                 # array where the square norm of d is stored
+    NPR_test = []                               # array where the NPR (noise power reduction) of the test sample is stored
+    NPR_avg = []                                # array where the NPR averaged over the pump-probe delays t is stored
+    
+    w_k = np.ones(n)                            # initial weights
+    
+    for k, alpha in enumerate(vector):
+        print("k: " + str(k))
+        w.append(np.sum(w_k))
+        
+        # find OD_ref step k (OD_ref_k)
+        W_k = np.diag(w_k)
+        
+        C = np.linalg.inv(OD_PC.T.dot(W_k.dot(OD_PC))).dot(
+            OD_PC.T).dot(W_k).dot(transAbs)
+        
+        model = OD_PC.dot(C)
+        OD_ref_k = transAbs - model
+        
+        # calculate d_norm step k, and append to list d_norm
+        OD_mean_k = np.mean(OD_ref_k,1)
+        d_abs_k = np.abs(OD_mean_k)
+        d_norm_k = np.linalg.norm(d_abs_k)    
+        d_norm.append(d_norm_k)
+        
+        # calculate NPR values for test sample (first delay), and append to list NPR_test
+        # average NPR for all the other delays, and append to list NPR_avg
+        OD_ref_k_t = np.reshape(OD_ref_k, [n, Ns, Nt])
+        NPR_k = NPRpca(OD_ref_k_t,tempTrans)
+        NPR_avg_k = np.sum((1-w_k)[:,None]*NPR_k,0)/np.sum(1-w_k)
+        NPR_test.append(10*np.log10(NPR_avg_k[0]))
+        NPR_avg.append(10*np.log10(np.mean(NPR_avg_k[1:])))
+        
+        # stop if the optimum is reached if the flag stop_at_optimum is selected
+        if k == k_opt and stop_at_opt:
+            break
+            
+        # calculate the weight of the next step
+        w_k = np.exp(-alpha*d_abs_k/d_norm_k)  
+            
+    # convert list of parameters to numpy arrays
+    w = np.array(w)
+    d_norm = np.array(d_norm)
+    NPR_test = np.array(NPR_test)
+    NPR_avg = np.array(NPR_avg)
 
-    C = np.linalg.inv(OD_PC.T.dot(W_k.dot(OD_PC))).dot(
-        OD_PC.T).dot(W_k).dot(transAbs)
+    plt.figure(figsize = (14,4))
+    plt.subplot(1,3,1)
+    plt.plot(k_vect, w)
+    plt.legend(['w'])
+    plt.subplot(1,3,2)
+    plt.plot(k_vect, d_norm)
+    plt.legend(['d'])
+    plt.subplot(1,3,3)
+    plt.plot(k_vect, NPR_test)
+    plt.plot(k_vect, NPR_avg)
+    plt.legend(['NPR test', 'NPR avg'])
+
+    if time is not None:
+        tempModel = np.reshape(model, (len(energy),
+                                       int(data.shape[1]/len(time)),
+                                       len(time)))
+        model2D = np.nanmean(tempModel,axis=1)
+
+        fig2,bx = plt.subplots(5,1,sharex=True)
+        for idx,axis in enumerate(bx):
+            axis.plot(energy,trans2D[:,-idx],label=str(time[-idx]))
+            axis.plot(energy,model2D[:,-idx])
+            axis.legend()
     
-    # result = minimize(PCAresid,params,args = (maskData,n_comps,pca,ROI))
-    model = OD_PC.dot(C)
-    
-    if not quiet:
-        plt.imshow((transAbs-model).T)
-    
-    return transAbs-model
+    return transAbs - model
 
 def NPRpca(pcaSub,data):
     NPR = (np.std(data,1)**2)/(np.std(pcaSub,1)**2)

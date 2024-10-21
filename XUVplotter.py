@@ -83,20 +83,10 @@ def plotXTAdata(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
     energy = Xdata.energy
     TimeAxis = Xdata.time
     Intensity = Xdata.trans2D
-    std = Xdata.trans2Dstd/np.sqrt(Xdata.trans3D.shape[1])
-    
-    # xticks = range(0,len(TimeAxis))
-    # yticks = range(0,len(energy),20)
-    # xticklabel = ["{:6.2f}".format(i) for i in TimeAxis[xticks]]
-    # yticklabel = ["{:6.2f}".format(i) for i in energy[yticks]]
+    std = Xdata.trans2Dstd
 
     fig1,ax1 = plt.subplots(1,1)
-    # ax1.set_xticks(xticks)
-    # ax1.set_xticklabels(xticklabel)
-    # ax1.set_yticks(yticks)
-    # ax1.set_yticklabels(yticklabel)
     
-    # if not fromGUI:
     cax = ax1.imshow(Intensity,interpolation=None,
                vmin=color_min,vmax=color_max,
                extent=[TimeAxis[0],TimeAxis[-1],energy[-1],energy[0]],
@@ -145,22 +135,22 @@ def plotTimeMap(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
 
     plotNum = round(np.sqrt(len(TimeAxis)))
 
-    fig1,ax = plt.subplots(plotNum,plotNum,sharey=True)
+    fig1,ax = plt.subplots(plotNum,plotNum,sharex=True)
     # ax.set_xticks(xticks)
     # ax1.set_xticklabels(xticklabel)
     
     # if not fromGUI:
     for idx,axis in enumerate(ax.ravel()):
         if idx > (Intensity.shape[2]-1):
-            axis.plot(Xdata.aveHarmData,energy)
-            axis.set_ylim(energy[-1],energy[0])
+            axis.plot(energy,Xdata.aveHarmData)
+            axis.set_xlim(energy[0],energy[-1])
             # axis.set_yticks(yticks)
             # axis.set_yticklabels(yticklabel)
             break
         
-        cax = axis.imshow(Intensity[:,:,idx],interpolation=None,
+        cax = axis.imshow(Intensity[:,:,idx].T,interpolation=None,
                vmin=color_min,vmax=color_max,
-               extent=[0,Intensity.shape[1],energy[-1],energy[0]],
+               extent=[energy[0],energy[-1],0,Intensity.shape[1]],
                cmap='bwr',aspect='auto')
         # axis.set_yticks(yticks)
         axis.set_xlabel(str(TimeAxis[idx])+' ps')
@@ -178,7 +168,6 @@ def plotHarms(XUVdata):
     energy = XUVdata.energy
     
     fig,ax1 = plt.subplots(1,1)
-    # plt.ylabel("Counts")
     ax1.plot(energy,data,label='Data')
     ax1.plot(energy,ref,label='Ref')
     ax1.set_xlabel(xlabel="Energy",fontsize=18)
@@ -187,7 +176,7 @@ def plotHarms(XUVdata):
     
     return
     
-def PlotKinetic(XTAdata,energy,plotFit = True, norm = False,normT = 500,plotError = True):
+def PlotKinetic(XTAdata,energy=None,plotFit = True, norm = False,normT = 500,plotError = True):
     """
     Takes a single TAdata, or a list of TAdata, and plots a kinetic trace. Plots any fit and error along with it.
 
@@ -215,6 +204,38 @@ def PlotKinetic(XTAdata,energy,plotFit = True, norm = False,normT = 500,plotErro
     
     if type(XTAdata)==list:
         gcf = __PlotMK__(XTAdata, energy,plotFit,norm,normT,plotError)
+    
+    elif energy is None: 
+    #If no energy is specified, plot all kinetic traces  
+        time = XTAdata.time
+        gcf, ax = plt.subplots()
+        for key in XTAdata.Kinetic.keys():
+            Intensity = XTAdata.Kinetic[key]
+            
+            if norm:
+                norm_i = [i for i,x in enumerate(time) if math.isclose(x, normT,rel_tol=(0.2))]
+                normFact = np.mean(Intensity[norm_i])
+            else:
+                normFact = 1
+            
+            if key in XTAdata.FitResults and plotFit:
+                fit_wvl = XTAdata.KineticFit[key]
+            
+            if plotError:
+                error = XTAdata.KineticStd[key]
+            
+            if plotError:
+                ax.errorbar(time,Intensity/normFact,yerr=error/normFact,
+                            capsize=3,capthick=2,
+                            label = key + ' eV')
+            else:
+                ax.plot(time,Intensity/normFact,'.',label = key + ' eV')
+                
+            if key in XTAdata.FitResults and plotFit:
+                ax.plot(time[0:len(fit_wvl)],fit_wvl/normFact,label = key + ' eV fit')
+            
+            plt.legend()
+        
     else:
         label= str(energy)
         
@@ -231,26 +252,33 @@ def PlotKinetic(XTAdata,energy,plotFit = True, norm = False,normT = 500,plotErro
         else:
             normFact = 1
         
-        # if label in XTAdata.FitResults and plotFit:
-        #     fit_wvl = XTAdata.KineticFit[label]
+        if label in XTAdata.FitResults and plotFit:
+            fit_wvl = XTAdata.KineticFit[label]
         
         if plotError:
             error = XTAdata.KineticStd[label]
         
         gcf, ax = plt.subplots()
         if plotError:
-            ax.errorbar(time,Intensity/normFact,yerr=error/normFact,capsize=0.5,label = XTAdata.name)
+            ax.errorbar(time,Intensity/normFact,yerr=error/normFact,
+                        capsize=3,capthick=2,
+                        label = XTAdata.name)
         else:
             ax.plot(time,Intensity/normFact,'.',label = XTAdata.name)
             
-        # if label in XTAdata.FitResults and plotFit:
-        #     ax.plot(time[0:len(fit_wvl)],fit_wvl/normFact,label = XTAdata.name+"fit")
+        if label in XTAdata.FitResults and plotFit:
+            ax.plot(time[0:len(fit_wvl)],fit_wvl/normFact,label = XTAdata.name+"fit")
         
         plt.legend()
         
+    plt.xlabel('Time (ps)')
+    plt.ylabel('DeltaA (OD)')
+    
+    plt.tight_layout()
+        
     return gcf
     
-def PlotSpectral(TAdata,time_slice,norm = False,normW = 500,plotError = False):
+def PlotSpectral(XTAdata,time_slice,norm = False,normW = 500,plotError = False):
     """
     Takes a single TAdata, or a list of TAdata, and plots a spectral trace. Plots error along with it.
 
@@ -272,21 +300,18 @@ def PlotSpectral(TAdata,time_slice,norm = False,normW = 500,plotError = False):
     gcf : pyplot figure class
         A structure to use if you want to make further changes to the figure.
     """
-    if type(TAdata)==list:
-        gcf = __PlotMS__(TAdata, time_slice, norm, normW,plotError)
+    if type(XTAdata)==list:
+        gcf = __PlotMS__(XTAdata, time_slice, norm, normW,plotError)
     else:
         label= str(time_slice)
         
-        if label in TAdata.T_slice:
-            Intensity = TAdata.T_slice[label]
+        if label in XTAdata.T_slice:
+            Intensity = XTAdata.T_slice[label]
         else:
-            TAdata.SpectralTrace(time_slice,time_slice/10)
-            Intensity = TAdata.T_slice[label]
+            XTAdata.SpectralTrace(time_slice,time_slice/10)
+            Intensity = XTAdata.T_slice[label]
         
-        if(TAdata.Ave):
-            error = TAdata.T_sliceStd[label]
-    
-        Wavelengths = TAdata.Wavelength
+        Wavelengths = XTAdata.energy
         gcf, ax = plt.subplots()
         
         if norm:
@@ -295,13 +320,15 @@ def PlotSpectral(TAdata,time_slice,norm = False,normW = 500,plotError = False):
         else:
             normFact = 1
             
-        if TAdata.Ave and plotError:
-            error = TAdata.T_sliceStd[label]
+        if plotError:
+            error = XTAdata.T_sliceStd[label]
             
-        if TAdata.Ave and plotError:
-            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,capsize=0.5,label =  TAdata.name)
+        if plotError:
+            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,
+                        capsize=3,capthick=2,
+                        label = XTAdata.name)
         else:
-            ax.plot(Wavelengths,Intensity/normFact,'r.',label = TAdata.name)
+            ax.plot(Wavelengths,Intensity/normFact,'r',label = XTAdata.name)
             
     return gcf
 
@@ -362,7 +389,7 @@ def __PlotMK__(XTAdata,energy,plotFit = False, norm = False,normT = 500,plotErro
         
     return gcf
 
-def __PlotMS__(TAdata,time_slice,norm = False,normW = 500,plotError = False):
+def __PlotMS__(XTAdata,time_slice,norm = False,normW = 500,plotError = False):
     """
     Takes a list of TAdata, and plots a spectral trace. Plots error along with it.
 
@@ -388,11 +415,11 @@ def __PlotMS__(TAdata,time_slice,norm = False,normW = 500,plotError = False):
     label= str(time_slice)
     
     gcf, ax = plt.subplots()
-    cmap = get_cmap(len(TAdata)+1)
+    cmap = get_cmap(len(XTAdata)+1)
     
-    for i,data in enumerate(TAdata):
+    for i,data in enumerate(XTAdata):
         Intensity = data.T_slice[label]
-        Wavelengths = data.Wavelength
+        Wavelengths = data.energy
         
         if norm:
             norm_i = [i for i,x in enumerate(Wavelengths) if math.isclose(x, normW,rel_tol=(0.01))]
@@ -400,19 +427,21 @@ def __PlotMS__(TAdata,time_slice,norm = False,normW = 500,plotError = False):
         else:
             normFact = 1
             
-        if data.Ave and plotError:
+        if plotError:
             error = data.T_sliceStd[label]
             
-        if data.Ave and plotError:
-            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,capsize=0.5,label = str(i))
+        if plotError:
+            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,
+                        capsize=3,capthick=2,
+                        label = data.name)
         else:
-            ax.plot(Wavelengths,Intensity/normFact,'r.',markevery =None,label = data.name,c=cmap(i))
+            ax.plot(Wavelengths,Intensity/normFact,'r',markevery =None,label = data.name,c=cmap(i))
             
         plt.legend()
             
     return gcf
 
-def PlotMSS(TAdata,time_points,norm = False,normW = 500,plotError = False):
+def PlotMSS(XTAdata,time_points,norm = False,normW = 500,plotError = False):
     """
     Takes a single TAdata and plots a range of spectral traces. Can plot error along with it.
 
@@ -440,14 +469,14 @@ def PlotMSS(TAdata,time_points,norm = False,normW = 500,plotError = False):
     for i,t_pnts in enumerate(time_points):
         label=str(t_pnts)
         
-        if label in TAdata.T_slice:
-            data = TAdata.T_slice[label][:]
+        if label in XTAdata.T_slice:
+            data = XTAdata.T_slice[label][:]
         else:
-            TAdata.SpectralTrace(t_pnts,t_pnts/10)
-            data = TAdata.T_slice[label][:]
+            XTAdata.SpectralTrace(t_pnts,t_pnts/10)
+            data = XTAdata.T_slice[label][:]
         
-        Intensity = TAdata.T_slice[label]
-        Wavelengths = TAdata.Wavelength
+        Intensity = XTAdata.T_slice[label]
+        Wavelengths = XTAdata.energy
         
         if norm:
             norm_i = [i for i,x in enumerate(Wavelengths) if math.isclose(x, normW,rel_tol=(0.01))]
@@ -455,19 +484,17 @@ def PlotMSS(TAdata,time_points,norm = False,normW = 500,plotError = False):
         else:
             normFact = 1
             
-        if TAdata.Ave and plotError:
-            error = TAdata.T_sliceStd[label]
+        if plotError:
+            error = XTAdata.T_sliceStd[label]
             
-        if TAdata.Ave and plotError:
-            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,capsize=0.5,label = label)
+        if plotError:
+            ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,
+                        capsize=3,capthick=2,label = label)
         else:
             ax.plot(Wavelengths,Intensity/normFact,'-',markevery =None, label = label,c=cmap(i))
             
         #future todo when a robust spectral fitting is implemented    
-        # if plotFit: #label in TAdata.SpectralFit and
-        #     fit_data = TAdata.SpectralFit[label]
-        #     ax.plot(Wavelengths,fit_data/normFact,label = "fit"+str(i),c=cmap(i))
-            
+        plt.tight_layout()
         plt.legend()
             
     return gcf
