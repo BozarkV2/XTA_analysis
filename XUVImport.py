@@ -106,7 +106,7 @@ def load_Generator(DIRECTORY):
         rawImage = spe.load(file.path)    
         yield rawImage
 
-def saveKin(TAdata,directory,basename,wvlngth):
+def save2D(XTAdata,Directory,FileNameList):
     """
     Utility to save all kinetic traces, either for a list of data or a single dataset.
     Will also save fits to the kinetic data, if available.
@@ -127,13 +127,55 @@ def saveKin(TAdata,directory,basename,wvlngth):
     None.
 
     """
-    label = str(wvlngth)
+    if re.search('/\Z', Directory)==None:
+        Directory +='/'
+        
+    if isinstance(XTAdata,list):
+        #XTAdata is not an individual object, but a list of objects
+        for data,file in zip(XTAdata,FileNameList):
+            np.savetxt(Directory+file+".txt",data.trans2D,header = file)
+            np.savetxt(Directory+file+"Std.txt",data.trans2Dstd,header = file)
+            np.savetxt(Directory+file+"Time.txt",XTAdata.time,header = file)
+            np.savetxt(Directory+file+"Energy.txt",XTAdata.energy,header = file)
+    else:
+        if isinstance(FileNameList,list):
+            file = FileNameList[0]
+        else:
+            file = FileNameList
+            
+        np.savetxt(Directory+file+".txt",XTAdata.trans2D,header = file)
+        np.savetxt(Directory+file+"Std.txt",XTAdata.trans2Dstd,header = file)
+        np.savetxt(Directory+file+"Time.txt",XTAdata.time,header = file)
+        np.savetxt(Directory+file+"Energy.txt",XTAdata.energy,header = file)
+
+def saveKin(XTAdata,directory,basename,energy):
+    """
+    Utility to save all kinetic traces, either for a list of data or a single dataset.
+    Will also save fits to the kinetic data, if available.
+
+    Parameters
+    ----------
+    TAdata : Single TAdata or list of TAdata
+        The data to save kinetic traces from.
+    directory : str
+        Where to save all the kinetic traces.
+    basename : str
+        Name to use for header and filename.
+    energy : int
+        The wavelength to save kinetic traces from.
+
+    Returns
+    -------
+    None.
+
+    """
+    label = str(energy)
     if re.search('/\Z', directory)==None:
         directory +='/'
         
-    if isinstance(TAdata,list):
+    if isinstance(XTAdata,list):
         #TAdata is not an individual object, but a list of objects
-        for i,data in enumerate(TAdata):
+        for i,data in enumerate(XTAdata):
             hdr = "Time" +str(i)+", kin" + basename+str(i) + ", Std" + basename +str(i) +", fit" \
                 + basename+str(i)
             np.savetxt(directory+basename+str(i)+".txt",
@@ -142,10 +184,10 @@ def saveKin(TAdata,directory,basename,wvlngth):
     else:
         hdr = "Time" +", kin" + basename + ", Std" + basename 
         np.savetxt(directory+basename+".txt",
-        np.stack([TAdata.Time,TAdata.Kinetic[label],
-                  TAdata.KineticStd[label]],axis=1),header = hdr)
+        np.stack([XTAdata.Time,XTAdata.Kinetic[label],
+                  XTAdata.KineticStd[label]],axis=1),header = hdr)
         
-def saveSpectral(TAdata,directory,basename,time):
+def saveSpectral(XTAdata,directory,basename,time):
     """
     Utility to save all spectral traces, either for a list of data or a single dataset.
 
@@ -171,18 +213,18 @@ def saveSpectral(TAdata,directory,basename,time):
     if re.search('/\Z', directory)==None:
         directory +='/'
     
-    if isinstance(TAdata,list):
+    if isinstance(XTAdata,list):
         #TAdata is not an individual object, but a list of objects
-        for i,data in enumerate(TAdata):
-            hdr = "Wavelength" +str(i)+", T_slice" + basename+str(i) + ", Std" + basename +str(i)
+        for i,data in enumerate(XTAdata):
+            hdr = "Energy" +str(i)+", T_slice" + basename+str(i) + ", Std" + basename +str(i)
             np.savetxt(directory+basename+str(i)+".txt",
-            np.stack([data.Wavelength,data.T_slice[label],
+            np.stack([data.energy,data.T_slice[label],
                       data.T_sliceStd[label]],axis=1),header = hdr)
     else:
         hdr = "Wavelength" +", T_slice" + basename + ", Std" + basename 
         np.savetxt(directory+basename+".txt",
-        np.stack([TAdata.Wavelength,TAdata.T_slice[label],
-                  TAdata.T_sliceStd[label]],axis=1),header = hdr)
+        np.stack([XTAdata.energy,XTAdata.T_slice[label],
+                  XTAdata.T_sliceStd[label]],axis=1),header = hdr)
     
 def saveFits(FitList,directory,basename, components):
     """
@@ -251,8 +293,9 @@ def saveFits(FitList,directory,basename, components):
     outArr = np.delete(outArr1,0,axis=0)
     outArr = np.concatenate([outArr2.transpose(),outArr],axis=1)
     np.savetxt(directory+basename+".txt",outArr,header = hdr)
+ 
     
-def exportAllTA(Directory,TAlist,FileNameList):
+def exportAllXTA(Directory,XTAlist,FileNameList):
     """
     Utility to save everything for a list of TAdata sets, including spectral traces,
     kinetic traces, time, wavelengths, 2D matrix, and standard deviation matrix.
@@ -261,8 +304,8 @@ def exportAllTA(Directory,TAlist,FileNameList):
     ----------
     Directory : str
         Where to save data.
-    TAlist : list
-        List of TAdata to export.
+    XTAlist : list
+        List of XTAdata to export.
     FileNameList : List
         List of names as a string to save each dataset to.
 
@@ -274,8 +317,8 @@ def exportAllTA(Directory,TAlist,FileNameList):
     if re.search('/\Z', Directory)==None:
         Directory +='/'
        
-    if isinstance(TAlist,list):     
-        for data,file in zip(TAlist,FileNameList):
+    if isinstance(XTAlist,list):     
+        for data,file in zip(XTAlist,FileNameList):
             for kin in data.Kinetic:
                 saveKin(data,Directory,file+kin,kin)
                 
@@ -292,17 +335,13 @@ def exportAllTA(Directory,TAlist,FileNameList):
         else:
             file = FileNameList
             
-        for kin in TAlist.Kinetic:
-            saveKin(TAlist,Directory,file+kin,kin)
+        for kin in XTAlist.Kinetic:
+            saveKin(XTAlist,Directory,file+kin,kin)
             
-        for spec in TAlist.T_slice:
-            saveSpectral(TAlist,Directory,file+spec+"ps",spec)
+        for spec in XTAlist.T_slice:
+            saveSpectral(XTAlist,Directory,file+spec+"ps",spec)
             
-        np.savetxt(Directory+file+".txt",TAlist.Intensity,header = file)
-        np.savetxt(Directory+file+"Std.txt",TAlist.Std,header = file)
-        np.savetxt(Directory+file+"Time.txt",TAlist.Time,header = file)
-        np.savetxt(Directory+file+"Wavelength.txt",TAlist.Wavelength,header = file)
-
- # fancy way to activate the main() function
-# if __name__ == '__main__':
-#     load_files('C:/Users/Bozark/Documents/Samples/OTA/April 2021 ZnOCdSe/CdSe_84B_5uW_visProbe')
+        np.savetxt(Directory+file+".txt",XTAlist.Intensity,header = file)
+        np.savetxt(Directory+file+"Std.txt",XTAlist.Std,header = file)
+        np.savetxt(Directory+file+"Time.txt",XTAlist.Time,header = file)
+        np.savetxt(Directory+file+"Wavelength.txt",XTAlist.energy,header = file)

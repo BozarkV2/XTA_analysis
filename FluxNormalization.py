@@ -159,6 +159,35 @@ def normHalfOddHarms(spectrum,energy=None,quiet=True):
     
     return normSpec
 
+def normBackSub(spectrum, bck, 
+                energy=None, Eaxis=None, quiet=True):
+    
+    if energy is None:
+        energy = np.arange(0,1024,1)
+        
+    if len(spectrum.shape)>1 and Eaxis is None:
+        Eaxis = getHarmPos(spectrum[:,0], energy,title='select ROI(s), low x then High x, to integrate for Background Normalization')
+    elif Eaxis is None or len(Eaxis)<2:
+        Eaxis = getHarmPos(spectrum, energy,title='select ROI(s), low x then High x, to integrate for Background Normalization')
+    
+    mask = np.where((energy>Eaxis[0]) & (energy<Eaxis[1]),
+                    True,False)
+    
+    if len(spectrum.shape)<2:
+        backFact = np.sum(spectrum,where=mask)
+    else:
+        TotalSpecCnts = np.sum(spectrum, axis=0, where=mask[:,np.newaxis])
+        TotalBackCnts = np.sum(bck,where=mask)
+        backFact = TotalSpecCnts/TotalBackCnts
+        
+    normSpec = spectrum - backFact[np.newaxis,:] * bck[:,np.newaxis]
+    
+    if not quiet:
+        fig,ax = plt.subplots()
+        ax.plot(energy,normSpec)
+    
+    return normSpec
+
 def onclick(event):
     global offset
     offset = 1

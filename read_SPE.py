@@ -101,7 +101,7 @@ def loadGen(fname):
     fid = FileLarge(fname)
     
     for z in range(fid._zdim):
-        print(z)
+        # print(z)
         yield fid.load_img(z)
     
     fid.close()

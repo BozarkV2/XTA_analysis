@@ -47,17 +47,24 @@ def svdCorr(data,comp = 10,threshold=0.95):
        
     return n_comp,pca
     
-def fitPCA(data, ref, energy,components = 20,transAbs=None,
+def fitPCA(data, ref, energy, components = 20,transAbs=None,
            threshold=0.95, maxIter=None,
-           time=None,pca=None,quiet=False):
+           time=None, pca=None, quiet=False):
     
     pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
     
+    pcaOffAbs = np.where(np.logical_or(np.isnan(pumpOffAbs), 
+                         np.isinf(pumpOffAbs)),
+                         0, pumpOffAbs)
+    
     if transAbs==None:
-        transAbs = -np.log10(np.abs(data/ref))
+        tempAbs = -np.log10(np.abs(data/ref))
+        transAbs = np.where(np.logical_or(np.isnan(tempAbs), 
+                             np.isinf(tempAbs)),
+                             0, tempAbs)
     
     if pca is None:
-        pca = PCA(components).fit(np.transpose(pumpOffAbs))
+        pca = PCA(components).fit(np.transpose(pcaOffAbs))
 
     OD_PC = pca.components_.T    
     
@@ -111,25 +118,41 @@ def fitPCA(data, ref, energy,components = 20,transAbs=None,
 
 def airPCA(data, ref, energy, components = 20, maxIter=40, time=None,
            threshold=0.95, transAbs=None,
-           pca=None, quiet=False):
+           pca=None, quiet=True):
     
     pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
     
+    pcaOffAbs = np.where(np.logical_or(np.isnan(pumpOffAbs), 
+                         np.isinf(pumpOffAbs)),
+                         0, pumpOffAbs)
+    
     if transAbs is None:
-        transAbs = -np.log10(np.abs(data/ref))
+        tempAbs = -np.log10(np.abs(data/ref))
+        transAbs = np.where(np.logical_or(np.isnan(tempAbs), 
+                             np.isinf(tempAbs)),
+                             0, tempAbs)
     
     if pca is None:
-        pca = PCA(components).fit(np.transpose(pumpOffAbs))
+        pca = PCA(components).fit(np.transpose(pcaOffAbs))
 
     OD_PC = pca.components_.T    
     
-    Nt = np.shape(time)[0]
-    n, scans = np.shape(transAbs)
-    Ns = int(scans/Nt)
-    
-    tempTrans = np.reshape(transAbs, 
-                           (n,Ns,Nt))
-    trans2D = np.nanmean(tempTrans,axis=1)
+    if time is not None:
+        Nt = np.shape(time)[0]
+        n, scans = np.shape(transAbs)
+        Ns = int(scans/Nt)
+        
+        tempTrans = np.reshape(transAbs, 
+                               (n,Ns,Nt))
+        trans2D = np.nanmean(tempTrans,axis=1)
+    else:
+        Nt=1
+        n, scans = np.shape(transAbs)
+        Ns = int(scans)
+        
+        tempTrans = np.reshape(transAbs, 
+                               (n,Ns,1))
+        trans2D = np.nanmean(tempTrans,axis=1)
     
     k_max = maxIter                             # maximum number of iterations
     c = 0.2                                     # constant c
@@ -197,7 +220,7 @@ def airPCA(data, ref, energy, components = 20, maxIter=40, time=None,
     plt.plot(k_vect, NPR_avg)
     plt.legend(['NPR test', 'NPR avg'])
 
-    if time is not None:
+    if time is not None and quiet is False:
         tempModel = np.reshape(model, (len(energy),
                                        int(data.shape[1]/len(time)),
                                        len(time)))

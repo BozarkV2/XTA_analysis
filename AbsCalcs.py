@@ -26,8 +26,6 @@ def XUVstd(data,Std,ref,refStd):
 def XUVtransAbs(data, ref):
     
     transient = -np.log10(np.abs(data/ref))
-    # bckg = np.mean([transient[x] for x,t in enumerate(time) if t<-5], axis=1)
-    # bckg = np.zeros(transient.shape)
     
     return transient
 

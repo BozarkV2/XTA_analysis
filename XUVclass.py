@@ -17,7 +17,7 @@ import read_SPE as spe
 import os
 from SPErebin import pixelBin,energyBin
 from CrossECorrection import energyCorrect
-from FluxNormalization import normHalfHarms,normHalfOddHarms,normOddHarms
+from FluxNormalization import normHalfHarms,normHalfOddHarms,normOddHarms,normBackSub
 from configparser import ConfigParser
 from AbsCalcs import XUVabs,XUVtransAbs
 from FreqFilter import freqFilterChoose
@@ -39,7 +39,7 @@ class XASdata():
         self.options = options
         self.pipe(XUVlist,dataBck,refBck,options)
         
-    def pipe(self, XUVlist,dataBck,refBck, options=None):
+    def pipe(self, XUVlist,dataBck=None,refBck=None, options=None):
         
         spectrum=None
         
@@ -52,13 +52,14 @@ class XASdata():
                 self.normFlux(options['normMethod'],spectrum=spectrum)
                 spectrum = self.normed
         
-        self.energyBin(spectrum=spectrum)
-        self.separateData(dataBck=dataBck,refBck=refBck)
+        self.energyBin(spectrum=spectrum,dataBck=dataBck,refBck=refBck)
+        self.separateData()
         self.calcAbs()
         self.averageXAS()
         self.scanStats()
         
-    def energyBin(self, binW=0.2,spectrum=None):
+    def energyBin(self, binW=0.2,spectrum=None,
+                  dataBck=None,refBck=None):
         
         if spectrum is not None:
             self.binned, self.binstd, self.energy = energyBin(spectrum,
@@ -67,7 +68,16 @@ class XASdata():
             self.binned, self.binstd, self.energy = energyBin(self.raw,
                                                           binW)
             
-    def separateData(self,method='Alt',data=None,ref=None,dataBck=None,refBck=None):
+        if dataBck is not None and refBck is not None:
+            bckbin = energyBin(np.asarray([dataBck,refBck]),
+                               binW,self.energy)
+            self.dataBck = bckbin[0][:,0]
+            self.refBck = bckbin[0][:,1]
+        else:
+            self.dataBck = None
+            self.refBck = None
+            
+    def separateData(self,method='Alt',data=None,ref=None):
         if data is not None and ref is not None:
             self.data = data
             self.ref = ref
@@ -85,11 +95,16 @@ class XASdata():
                                           self.binned[:,5::4]),
                                           axis=1)
                 
-        if dataBck is not None and refBck is not None:
-            self.dataBck = dataBck
-            self.refBck = refBck
-            self.data -= dataBck[:,None]
-            self.ref -= refBck[:,None]
+        if self.dataBck is not None and self.refBck is not None:
+            if self.options['NormFlux']:
+                self.data = normBackSub(self.data, self.dataBck, self.energy)
+                self.ref = normBackSub(self.ref, self.refBck, self.energy)
+            elif self.options['normBckTF']:
+                self.data = normBackSub(self.data, self.dataBck, self.energy)
+                self.ref = normBackSub(self.ref, self.refBck, self.energy)
+            else:
+                self.data -= self.dataBck[:,None]
+                self.ref -= self.refBck[:,None]
         
     def scanStats(self):
         self.intCnts = np.sum(self.binned,axis=0)
@@ -125,11 +140,15 @@ class XASdata():
         self.aveHarmRef = np.nanmean(self.ref,axis=1)
 
 class XTAdata():
-    def __init__(self,XUVlist,time,dataBck=None,refBck=None,
-                 name = None, options = None, template = None):
+    def __init__(self, XUVlist, time, options,
+                 dataBck=None, refBck=None,
+                 name = None, template = None):
         self.raw = np.asarray(XUVlist)
         self.name = name
         self.time = np.array(time)
+        if template is not None:
+            options = template.options
+            options['Eaxis']=template.energy
         self.options = options
         self.Kinetic = {}
         self.KineticStd = {}
@@ -151,7 +170,9 @@ class XTAdata():
                 self.normFlux(options['normMethod'],spectrum=spectrum)
                 spectrum = self.normed
         
-            self.energyBin(spectrum=spectrum,dataBck=dataBck,refBck=refBck)
+            self.energyBin(options, spectrum=spectrum,
+                           dataBck=dataBck,
+                           refBck=refBck)
             self.separateData(method=options['dataOrg'])
         
             self.calcTrans(pca = options['pcaTF'],
@@ -159,22 +180,27 @@ class XTAdata():
                            pcaArgs = options['pcaArgs'])
             
         else:
-            self.energyBin(dataBck=dataBck,refBck=refBck)
+            self.energyBin(options, dataBck=dataBck, refBck=refBck)
             self.separateData()
             self.calcTrans()
             
+        if len(self.time) >1:
+            self.bckgSub()
         self.averageXTA()
         self.scanStats()
-        self.bckgSub()
         
-    def energyBin(self, binW=0.2,spectrum=None,
+    def energyBin(self, options,spectrum=None,
                   dataBck=None,refBck=None):
+        
+        binW = options['binW']
+        Eaxis = options['Eaxis']
         if spectrum is None:
             self.binned, self.binstd, self.energy = energyBin(self.raw,
-                                                          binW)
+                                                          binW, Eaxis)
         else:
             self.binned, self.binstd, self.energy = energyBin(spectrum,
-                                                          binW)
+                                                          binW, Eaxis)
+            
         if dataBck is not None and refBck is not None:
             bckbin = energyBin(np.asarray([dataBck,refBck]),
                                binW,self.energy)
@@ -248,14 +274,16 @@ class XTAdata():
     def scanStats(self):
         self.intCnts = np.sum(self.binned,axis=0)
         self.harmStd = np.nanstd(self.data,axis=1)
+        self.harm2Ddiff = self.data - self.aveHarmData[:,None,None]
         
     def bckgSub(self):
         
         temptime = np.where(self.time<-0.1,True,False)
-        TmpArr = self.trans2D[:,temptime]
-        TmpMean = np.nanmean(TmpArr,axis=1)
+        TmpArr = self.trans3D[:,:,temptime]
+        TmpMean = np.nanmean(TmpArr,axis=(1,2))
         
-        self.trans2D = self.trans2D - TmpMean[:,None]
+        self.background = TmpMean
+        self.trans3D = self.trans3D - TmpMean[:,None,None]
         
     def KineticTrace(self,energy,binW):
         idx = []
@@ -271,7 +299,116 @@ class XTAdata():
         self.T_slice[label] = np.sum(self.trans2D[:,idx].copy(),axis=1)/len(idx)
         self.T_sliceStd[label]=np.sqrt(np.sum(np.square(self.trans2Dstd[:,idx].copy()),axis=1))/sqrt(len(idx))
 
-class XUVave():
-    def __init__(self):
-        super(XASdata).__init__()
+class XMCDdata():
+    def __init__(self, XUVlist, dataBck=None, refBck=None,
+                 name = None, options = None, template = None):
+        self.raw = np.asarray(XUVlist)
+        self.name = name
+        self.options = options
+        self.Kinetic = {}
+        self.KineticStd = {}
+        self.T_slice = {}
+        self.T_sliceStd = {}
+        self.FitResults = {}
+        self.KineticFit = {}
+        self.pipe(XUVlist,dataBck,refBck,options)
         
+    def pipe(self, XUVlist, dataBck,refBck,options=None):
+        spectrum=None
+        
+        if options is not None:
+            if options['AlignE']:
+                self.alignE(XUVlist)
+                spectrum = self.aligned
+                
+            if options['NormFlux']:
+                self.normFlux(options['normMethod'],spectrum=spectrum)
+                spectrum = self.normed
+        
+            self.energyBin(spectrum=spectrum,dataBck=dataBck,refBck=refBck)
+            self.separateData(method=options['dataOrg'])
+        
+            self.calcTrans(pca = options['pcaTF'],
+                           pcaMethod=options['pcaMethod'],
+                           pcaArgs = options['pcaArgs'])
+            
+        else:
+            self.energyBin(dataBck=dataBck,refBck=refBck)
+            self.separateData()
+            self.calcTrans()
+            
+        self.averageXTA()
+        self.scanStats()
+        
+    def energyBin(self, binW=0.2, spectrum=None,
+                  dataBck=None, refBck=None):
+        if spectrum is None:
+            self.binned, self.binstd, self.energy = energyBin(self.raw,
+                                                          binW)
+        else:
+            self.binned, self.binstd, self.energy = energyBin(spectrum,
+                                                          binW)
+            
+        if dataBck is not None and refBck is not None:
+            bckbin = energyBin(np.asarray([dataBck,refBck]),
+                               binW,self.energy)
+            self.dataBck = bckbin[0][:,0]
+            self.refBck = bckbin[0][:,1]
+        else:
+            self.dataBck = None
+            self.refBck = None
+            
+    def alignE(self,XUVlist):
+        self.aligned = np.asarray(energyCorrect(XUVlist))
+            
+    def normFlux(self,method,spectrum=None):
+        if spectrum is not None:
+            self.normed = method(spectrum)
+        else:
+            self.normed = method(self.raw)
+        
+    def separateData(self,method='Alt', data=None, ref=None):
+        if data is None or ref is None:
+            if method == 'Alt':
+                self.data = self.binned[:,0::2]
+                self.ref = self.binned[:,1::2]
+            else:
+                self.data = np.concatenate((self.binned[:,0::4],
+                                           self.binned[:,3::4]),
+                                           axis=1)
+                
+                self.ref = np.concatenate((self.binned[:,1::4],
+                                          self.binned[:,2::4]),
+                                          axis=1) 
+        else:
+            self.data = data
+            self.ref = ref
+            
+        if self.dataBck is not None and self.refBck is not None:
+            self.data -= self.dataBck[:,None]
+            self.ref -= self.refBck[:,None]
+        
+    def calcTrans(self, data=None, ref=None,
+                  pca=False, pcaMethod=None, pcaArgs=None):
+        if data is not None:
+            trans = XUVtransAbs(data, ref)
+        elif pca:
+            trans = pcaMethod(self.data, self.ref,
+                              self.energy, **pcaArgs)
+        else:
+            trans = XUVtransAbs(self.data, self.ref)
+        
+        self.trans2D = np.reshape(trans, (len(self.energy),
+                                          int(self.data.shape[1])))
+        
+    def averageXTA(self,outliers=False):
+        self.MCD = np.nanmean(self.trans2D,axis=1)
+        self.MCDstd = np.nanstd(self.trans2D,axis=1)/np.sqrt(self.trans2D.shape[1])
+            
+        self.aveHarmData = np.nanmean(self.data,axis=1)
+        self.aveHarmRef = np.nanmean(self.ref,axis=1)
+        
+    def scanStats(self):
+        self.intCnts = np.sum(self.binned,axis=0)
+        self.harmStd = np.nanstd(self.data,axis=1)
+        self.harm2Ddiff = self.data - self.aveHarmData[:,None,None]

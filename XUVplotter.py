@@ -19,19 +19,59 @@ def plotXAS(XUVdata):
     
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,sharey=False)
     # plt.ylabel("Counts")
-    ax1.plot(energy,data)
-    ax1.plot(energy,ref)
+    ax1.plot(energy,data,label = XUVdata.name)
+    ax1.plot(energy,ref, label = 'Reference')
     ax1.set_xlabel(xlabel="Pixel",fontsize=18)
     ax1.set_ylabel(ylabel="Counts",fontsize=18)
     ax1.legend()
     
     ax2.plot(energy,absData,label = "Average Absorbance")
     ax2.set_xlabel(xlabel="Energy",fontsize=18)
-    ax2.set_ylabel(ylabel="Counts",fontsize=18)
+    ax2.set_ylabel(ylabel="Absorbance",fontsize=18)
     ax2.fill_between(energy,
                      absData-std,
                      absData+std,
                      alpha=0.5,color='r')
+    ax2.plot(energy,std,label = 'Standard Deviation')
+    ax2.legend()
+
+def plotXAShalf(XUVdata,percentile = 20):
+    
+    absDataUpper = np.where(XUVdata.aveXASstd > np.percentile(XUVdata.aveXASstd,percentile),
+                            XUVdata.aveXAS,
+                            np.nan)
+    
+    stdUpper = np.where(XUVdata.aveXASstd > np.percentile(XUVdata.aveXASstd,percentile),
+                            XUVdata.aveXASstd,
+                            0)
+    
+    absDataLower = np.where(XUVdata.aveXASstd < np.percentile(XUVdata.aveXASstd,percentile),
+                            XUVdata.aveXAS,
+                            np.nan)
+    
+    stdLower = np.where(XUVdata.aveXASstd < np.percentile(XUVdata.aveXASstd,percentile),
+                            XUVdata.aveXASstd,
+                            0)
+    
+    std = XUVdata.aveXASstd
+    energy = XUVdata.energy
+    
+    fig,ax2 = plt.subplots(1,1,sharex=True,sharey=False)
+    
+    ax2.plot(energy,absDataLower,label = "Average Lower Abs")
+    ax2.plot(energy,absDataUpper,label = "Average Upper Abs")
+    ax2.set_xlabel(xlabel="Energy",fontsize=18)
+    ax2.set_ylabel(ylabel="Absorbance",fontsize=18)
+    ax2.fill_between(energy,
+                     absDataLower-stdLower,
+                     absDataLower+stdLower,
+                     alpha=0.2,color='b')
+    
+    ax2.fill_between(energy,
+                     absDataUpper-stdUpper,
+                     absDataUpper+stdUpper,
+                     alpha=0.2,color='r')
+    
     ax2.plot(energy,std,label = 'Standard Deviation')
     ax2.legend()
 
@@ -41,7 +81,7 @@ def plotStats(XUVdata):
     
     Eaxis = XUVdata.energy
     
-    ax1.hist(XUVdata.aveXASstd,bins=100)
+    ax1.hist(XUVdata.aveXASstd,bins=500)
     ax1.set_title('XAS standard deviation Distribution')
     ax1.set_xlabel('Standard Deviation Bin')
     ax1.set_ylabel('Frequency')
@@ -92,6 +132,8 @@ def plotXTAdata(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
                extent=[TimeAxis[0],TimeAxis[-1],energy[-1],energy[0]],
                cmap='bwr',aspect='auto')
     
+    ax1.set_xlabel('Time (ps)')
+    ax1.set_ylabel('Energy (eV)')
     fig1.colorbar(cax,ax=ax1)
     
     fig2,bx = plt.subplots(1,1,sharex=True)
@@ -100,6 +142,8 @@ def plotXTAdata(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
                     capsize=3,capthick=2,
                     label=str(t)+' ps')
     
+    bx.set_xlabel('Energy (eV)')
+    bx.set_ylabel('delta OD')
     bx.legend()
     fig2.tight_layout()
     
@@ -278,7 +322,8 @@ def PlotKinetic(XTAdata,energy=None,plotFit = True, norm = False,normT = 500,plo
         
     return gcf
     
-def PlotSpectral(XTAdata,time_slice,norm = False,normW = 500,plotError = False):
+def PlotSpectral(XTAdata,time_slice = None,
+                 norm = False,normW = 500,plotError = False):
     """
     Takes a single TAdata, or a list of TAdata, and plots a spectral trace. Plots error along with it.
 
@@ -302,6 +347,28 @@ def PlotSpectral(XTAdata,time_slice,norm = False,normW = 500,plotError = False):
     """
     if type(XTAdata)==list:
         gcf = __PlotMS__(XTAdata, time_slice, norm, normW,plotError)
+    elif time_slice is None:
+        energy = XTAdata.energy
+        gcf, ax = plt.subplots()
+        for key in XTAdata.T_slice.keys():
+            Intensity = XTAdata.T_slice[key]
+            
+            if norm:
+                norm_i = [i for i,x in enumerate(energy) if math.isclose(x, normW,rel_tol=(0.2))]
+                normFact = np.mean(Intensity[norm_i])
+            else:
+                normFact = 1
+            
+            if plotError:
+                error = XTAdata.T_sliceStd[key]
+            
+                ax.errorbar(energy,Intensity/normFact,yerr=error/normFact,
+                            capsize=3,capthick=2,
+                            label = key + ' ps')
+            else:
+                ax.plot(energy,Intensity/normFact,'.',label = key + ' ps')
+                 
+            plt.legend()    
     else:
         label= str(time_slice)
         
@@ -323,13 +390,17 @@ def PlotSpectral(XTAdata,time_slice,norm = False,normW = 500,plotError = False):
         if plotError:
             error = XTAdata.T_sliceStd[label]
             
-        if plotError:
             ax.errorbar(Wavelengths,Intensity/normFact,yerr=error/normFact,
                         capsize=3,capthick=2,
                         label = XTAdata.name)
         else:
             ax.plot(Wavelengths,Intensity/normFact,'r',label = XTAdata.name)
             
+    ax.set_xlabel('Energy (eV)')
+    ax.set_ylabel('Delta OD')
+            
+    plt.tight_layout()
+    
     return gcf
 
 def __PlotMK__(XTAdata,energy,plotFit = False, norm = False,normT = 500,plotError = False):

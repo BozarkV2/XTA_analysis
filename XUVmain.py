@@ -5,7 +5,7 @@ Created on Mon Sep 20 18:50:53 2021
 @author: Bozark
 """
 
-from XUVclass import XASdata,XUVave,XTAdata
+from XUVclass import XASdata,XTAdata
 import XUVplotter as Xplt
 from XUVImport import dataImporter, load_Generator
 import matplotlib.pyplot as plt
@@ -27,18 +27,28 @@ from maskDatasets import trimDataset
 from CrossECorrection import energyCorrect
 from FluxNormalization import normHarms,normOddHarms,normHalfHarms,normHalfOddHarms
 from FreqFilter import freqFilter,freqFilterChoose
+from statMethods import fitPCA,airPCA
 
-def init(DIRECTORY,DIR_2 = ''):
+def init(DIRECTORY):
     
     workspace_dict={
     'DIRECTORY':DIRECTORY,
-    'normMethod':normHalfHarms,
     'all_subdirs':True,
     'CropTF':False,
+    'Eaxis':None,
+    'binW':0.2,
     'AlignE':False,
-    'NormFlux':True,
+    'NormFlux':False,
+    'normBckTF':False,
+    'normMethod':normHalfHarms,
+    'dataOrg':'Alt',
     'pcaTF':False,
+    'pcaMethod':fitPCA,
+    'pcaArgs':{'components':20,
+               'maxIter':40, #only for airPCA
+               'threshold':0.95}
     }
+    
     return workspace_dict
 
 def mainStatic(initDict,XUVlist = None,refBack=None,dataBack=None, **kwargs):
@@ -138,31 +148,46 @@ def mainMCD(initDict='',**kwargs):
     
     return meanMCD #XUVdata(freqFilt, meanStd, Eaxis)
 
-def importDir(initDict,options = 'None'):
+def importDir(initDict,subdirs=False):
     
-    if type(initDict) == dict:
+    if subdirs is True:
+        rawImgs=[]
+        if type(initDict) is dict:
+            for path in os.scandir(initDict['DIRECTORY']):
+                if path.is_dir():
+                    rawImgs.append(importDir(path))
+        else:
+            for path in os.scandir(initDict['DIRECTORY']):
+                if path.is_dir():
+                    rawImgs.append(importDir(path))
+        
+    if type(initDict) is dict:
         fileGen= (file for file in os.scandir(initDict['DIRECTORY']) 
                   if file.path.endswith('.spe'))
+        if initDict['CropTF']:
+            cropList = []
+            cropTF = True
+        else:
+            cropList = [[],[]]
+            cropTF = False
     else: 
         fileGen = (file for file in os.scandir(initDict) 
                    if file.path.endswith('.spe'))
+        cropList = [[],[]]
+        cropTF = False
         
     rawImgs = []
     idx=0
-    if initDict['CropTF']:
-        cropList = []
     
     for file in fileGen:
         print(file.name)
         for data in spe.loadGen(file):
-            if initDict['CropTF'] and idx<2:
+            if cropTF and idx<2:
                 cropROI = getCropPos(data)
                 if idx ==0:
                     cropList.append(cropROI)
                 elif idx ==1:
                     cropList.append(cropROI)
-            elif not initDict['CropTF']:
-                cropList = [[],[]]
             
             rawImgs.append(pixelBin(data,
                                     cropList[np.mod(idx,2)]))
@@ -198,82 +223,3 @@ def getCropPos(Xdata,title='Select harmonic peaks'):
     idx = np.array(pos[:,1],dtype='int')
     
     return idx
-
-# def mainTransient(DIRECTORY='',ENERGY_DIR='',REIMPORT=True,
-#                   REF_DIR = '',ROI = [30,75],Bin_params='',
-#                   TIME_DIR= '',REFL_YN=False,STATIC_YN=False,
-#                   BASE_YN = True,
-#                   **kwargs):
-#     """"This is the main function for importing and processing XUV data. It will automatically find
-#     files with
-    
-#     If you set all_subdirs to True, then the function will loop through all subfolders,
-#     and return a list of lists with all the data in each subfolder.
-#     """
-#     plt.close('all')
-#     energyCalib = np.loadtxt(ENERGY_DIR)[:,1]
-#     # binParams = ConfigParser(DIRECTORY + "binParams.txt")
-#     XUVlist=[]
-#     binnedImages = []
-    
-#     params = ConfigParser()
-#     params.read(Bin_params)
-        
-#     if STATIC_YN: 
-#        timeAxis=[] 
-#     else: #for transient data, load time
-#         timeTemp = np.loadtxt(TIME_DIR) #load raw file
-#         #convert 2-column time data to 1 column
-#         timeAxis = np.where(timeTemp[1]<0,
-#                             -timeTemp[0],timeTemp[0]) 
-        
-#     binnedStd =[]
-#     if len(REF_DIR)>0:
-#         refXAS = spe.load(REF_DIR)
-#         reftempBin = pixelBin(refXAS)
-#         binnedRef,refStd,Eaxis = energyBin(reftempBin,energyCalib,params)
-    
-#     for entry in os.scandir(DIRECTORY):
-#         if(entry.is_dir()==True):
-#             print("importing: " + entry.path)
-            
-#             #load raw SPE image
-#             rawImage = spe.load_files(entry.path)
-            
-#             #separate out loops within a single file
-#             imageList = [im for im in rawImage[:][0][0]]
-            
-#             #rebinn over energy and pixels
-#             for image in imageList:
-#                 tempBin = pixelBin(image)
-                
-#                 binnedImage,binStd,_ = energyBin(tempBin, energyCalib, params)
-                
-#                 binnedImages.append(binnedImage)
-#                 binnedStd.append(binStd)
-            
-#             #baseline fitting and subtraction for transmission
-#             if BASE_YN:
-#                 for image,std in zip(binnedImages,binnedStd):
-#                     baseline = fitBaseline(image,mask = ROI, order=4)
-#                     image = subBaseline(image, baseline)
-           
-#     #normalize images to 1 within ROI
-#     normAbs(XUVlist,ROI)
-        
-#     if not STATIC_YN:
-#         alignTime(XUVlist)
-    
-#     #average
-#     XUVave = AveXUV(XUVlist, STATIC_YN,timeAxis)
-        
-#     #calculate confidence intervals
-    
-#     for data in XUVdata:
-#         data.BckgSub()
-#         Xplt.plotXUVdata(data)
-        
-#     return XUVdata
-    
-# if __name__ == '__main__':
-#     TAdata = main()

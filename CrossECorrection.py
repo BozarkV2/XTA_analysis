@@ -60,3 +60,48 @@ def crossResidual(params,ref,data,shift,centerPxl,refPxl):
     model = np.max(correlate(ref,ecorrData,mode='same'))
     
     return np.abs(ref-ecorrData)/model
+
+def testenergyCorrect(data):
+    
+    params = Parameters()
+    params.add('m', value= 1,min=0.8,max=1.2, vary=True)
+    params.add('shift', value= 0,min=-2,max=2, vary=True)
+    
+    dataArr = np.asarray(data)
+    meanCnts = np.mean(dataArr,axis=1)
+    refIdx = getMask(meanCnts, title = 'Select reference scan')[0]
+    
+    refPxl = np.linspace(1,1024,num=1024)
+    eCorrected=[]
+
+    for idx,dataset in enumerate(data):
+        if idx is not refIdx:
+            
+            normRef = data[refIdx]/np.sum(data[refIdx])
+            normData = dataset/np.sum(dataset)
+            
+            results = minimize(testcrossResidual,params,
+                               args=(normRef,normData,refPxl),
+                               nan_policy='omit')
+            
+            slope = results.params['m'].value
+            intercept = results.params['shift'].value
+            dataInterp = interp1d(intercept+slope*refPxl,dataset,fill_value='extrapolate')
+            tempCorr = dataInterp(refPxl)
+            eCorrected.append(tempCorr)
+        else:
+            eCorrected.append(data[idx])
+    
+    return eCorrected
+
+def testcrossResidual(params,ref,data,refPxl):
+    
+    parvals = params.valuesdict()
+    slope = parvals['m']
+    shift = parvals['shift']
+    
+    dataInterp = interp1d(slope*refPxl+shift,data,fill_value='extrapolate')
+    ecorrData = dataInterp(refPxl)
+    model = np.max(correlate(ref,ecorrData,mode='same'))
+    
+    return np.abs(ref-ecorrData)/model
