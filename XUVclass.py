@@ -33,9 +33,13 @@ class XUVimg():
         self.name = name
 
 class XASdata():
-    def __init__(self,XUVlist,dataBck=None,refBck=None,name=None,options=None):
+    def __init__(self,XUVlist,dataBck=None,refBck=None,name=None,
+                 options=None, template = None):
         self.raw = np.asarray(XUVlist)
         self.name = name
+        if template is not None:
+            options = template.options
+            options['Eaxis']=template.energy
         self.options = options
         self.pipe(XUVlist,dataBck,refBck,options)
         
