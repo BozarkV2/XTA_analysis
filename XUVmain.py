@@ -7,44 +7,32 @@ Created on Mon Sep 20 18:50:53 2021
 
 from XUVclass import XASdata,XTAdata
 import XUVplotter as Xplt
-from XUVImport import dataImporter, load_Generator
 import matplotlib.pyplot as plt
-# import KineticFitFunctions as kff
-# import SpectralFitFunctions as sff
 import os,time
 import os.path as pth
 import numpy as np
-from scipy.interpolate import interp1d
-from lmfit import Parameters
 from mpl_point_clicker import clicker 
 import read_SPE as spe
 from SPErebin import energyBin,pixelBin
-from configparser import ConfigParser
-from alignTime import alignTime
-from normAbs import normAbs
-from AbsCalcs import XUVtransAbs,XUVabs
-from maskDatasets import trimDataset
-from CrossECorrection import energyCorrect
 from FluxNormalization import normHarms,normOddHarms,normHalfHarms,normHalfOddHarms
-from FreqFilter import freqFilter,freqFilterChoose
 from statMethods import fitPCA,airPCA
 
 def init(DIRECTORY):
     
     workspace_dict={
-    'DIRECTORY':DIRECTORY,
-    'all_subdirs':True,
-    'CropTF':False,
-    'Eaxis':None,
-    'binW':0.2,
-    'AlignE':False,
-    'NormFlux':False,
-    'normBckTF':False,
-    'normMethod':normHalfHarms,
-    'dataOrg':'Alt',
-    'pcaTF':False,
-    'pcaMethod':fitPCA,
-    'pcaArgs':{'components':20,
+    'DIRECTORY':DIRECTORY, #Where is your data stored? Must be file path
+    'all_subdirs':True, #Whether you want to import all directories in a folder
+    'CropTF':False, #do you want to crop the y-axis of the images
+    'Eaxis':None, #give an energy array if you already have an energy axis on hand
+    'binW':0.2, #the energy bin width in eVs
+    'AlignE':False, #do you want to dynamically adjust the energy axis, primarily for ground states
+    'NormFlux':False, #Do you want to normalize the flux between scans?
+    'normBckTF':False, #Do you want to scale the background spectra to the data?
+    'normMethod':normHalfHarms, #what method to use during normalization, generally stick with normHalfHarms
+    'dataOrg':'Alt', #how was the data collected? 'Alt' for alternating (data/ref/data/ref...), or 'NSSN' (data/ref/ref/data...)
+    'pcaTF':False, #Do you want to do principal component analysis?
+    'pcaMethod':fitPCA, #what method do you want to use for PCA?
+    'pcaArgs':{'components':20, 
                'maxIter':40, #only for airPCA
                'threshold':0.95}
     }
@@ -92,61 +80,27 @@ def mainTrans(initDict,time,XUVlist = None,refBack=None,dataBack=None,
     
     return XTA
 
-def mainMCD(initDict='',**kwargs):
+def mainMCD(initDict, XUVlist = None, refBack=None, dataBack=None,
+             **kwargs):
     """"This is the main function for importing and processing XUV data. It will automatically find
     files with XMCD
     
     If you set all_subdirs to True, then the function will loop through all subfolders,
     and return a list of lists with all the data in each subfolder.
     """
-    if initDict == '':
-        initDict = init()
+    plt.close('all')
     
-    energy = np.loadtxt(initDict['ENERGY_DIR'])[:,1]
-    #load data, binned by pixel
-    XUVlist = importDir(initDict)
-    binParams = ConfigParser()
-    try:
-        binParams.read(initDict['Bin_params'])
-    except FileNotFoundError():
-        binParams={'Ebins':{'binW':0.2}}
-        
-    #align energy axis, normalize the flux
-    if initDict['CorrectE']:
-        Ealigned = energyCorrect(XUVlist)
-    else:
-        Ealigned = XUVlist
-    #mask bad data
-    dataMask = trimDataset(np.asarray(Ealigned[0::2]))
-    #normalize Flux
-    if initDict['normMethod'] == 'Odd':
-        normSpectra = normOddHarms(np.asarray(Ealigned), '', energy)
-    elif initDict['normMethod'] == 'Half': 
-        normSpectra = normHalfHarms(np.asarray(Ealigned), '', energy)
-    else:
-        normSpectra=normHarms(np.asarray(Ealigned))
-    #bin over energy
-    ebin,ebinstd,Eaxis = energyBin(normSpectra, energy, binParams)
+    if XUVlist is None:
+        XUVlist = importDir(initDict)
+    # dataMask = trimDataset(pumpON)    
     
-    #separate out datasets, plot
-    sample = ebin[:,1::2]
-    sampleStd = ebinstd[:,1::2]
-    reference = ebin[:,0::2]
-    referenceStd = ebinstd[:,0::2]
+    XMCD = XTAdata(XUVlist,[0],options=initDict,
+                  dataBck=dataBack,refBck=refBack)
     
-    plotStep = int(sample.shape[0]/40)
-    fig1,ax1 = plt.subplots()
-    ax1.plot(np.transpose(sample[:,::plotStep]),'r')
-    ax1.plot(np.transpose(reference[:,::plotStep]),'b')
+    Xplt.plotXAS(XMCD)
+    Xplt.plotStats(XMCD)
     
-    #calulate absorbtion
-    MCD = sample-reference
-    #average data
-    meanMCD = np.nanmean(MCD,axis=1,where=dataMask)
-    #frequency filter the data
-    freqFilt = freqFilterChoose(meanMCD,Eaxis)
-    
-    return meanMCD #XUVdata(freqFilt, meanStd, Eaxis)
+    return XMCD
 
 def importDir(initDict,subdirs=False):
     
