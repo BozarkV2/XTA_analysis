@@ -51,7 +51,16 @@ def fitPCA(data, ref, energy, components = 20,transAbs=None,
            threshold=0.95, maxIter=None,
            time=None, pca=None, quiet=False):
     
-    pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
+    if time is not None:
+        ref3D = np.reshape(time, (len(energy),
+                                  int(data.shape[1]/len(time)),
+                                  len(time)))
+        tempOffAbs = -np.log10(np.abs(ref[:,0::2,:]/ref[:,1::2,:]))
+        pumpOffAbs = np.reshape(time, (len(energy),
+                                       int(data.shape[1]/len(time)/2),
+                                       len(time)))
+    else:
+        pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
     
     pcaOffAbs = np.where(np.logical_or(np.isnan(pumpOffAbs), 
                          np.isinf(pumpOffAbs)),
