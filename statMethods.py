@@ -65,7 +65,7 @@ def fitPCA(data, ref, energy, components = 20,transAbs=None,
                          np.isinf(pumpOffAbs)),
                          0, pumpOffAbs)
     
-    if transAbs==None:
+    if transAbs is None:
         tempAbs = -np.log10(np.abs(data/ref))
         transAbs = np.where(np.logical_or(np.isnan(tempAbs), 
                              np.isinf(tempAbs)),
