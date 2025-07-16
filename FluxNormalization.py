@@ -195,7 +195,7 @@ def getHarmPos(Xdata,energy,title='Select harmonic peaks'):
     axs.plot(energy,Xdata)
     plt.title(title)
     klicker = clicker(axs,['pos'],markers=["x"],linestyle="-",colors=["red"])
-    plt.show(blocked=True)
+    plt.show(block=True)
     
     pos = klicker.get_positions()['pos']
     idx = np.array(pos[:,0])
