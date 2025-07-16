@@ -149,11 +149,6 @@ def importDir(initDict,subdirs=False):
         
     return rawImgs
 
-def onclick(event):
-    global offset
-    offset = 1
-    return 
-
 def getCropPos(Xdata,title='Select harmonic peaks'):
     """"Function to use to extract points for GVDcorrection. Only call on it's own if you want the points used for GVDcorrection.
     Returns a tuple of GVD points in energy and time"""
@@ -161,17 +156,17 @@ def getCropPos(Xdata,title='Select harmonic peaks'):
     axs.imshow(Xdata)
     plt.title(title)
     klicker = clicker(axs,['pos'],markers=["x"],linestyle="-",colors=["red"])
-    plt.show()
+    plt.show(block=True)
         
-    cid = fig.canvas.mpl_connect('close_event', onclick)
-    while not 'offset' in globals():
-        plt.pause(2)
+    #cid = fig.canvas.mpl_connect('close_event', onclick)
+    #while not 'offset' in globals():
+    #    plt.pause(2)
     
-    if 'offset' in globals():
-        global offset
-        del offset
+    #if 'offset' in globals():
+    #    global offset
+    #    del offset
 
-    fig.canvas.mpl_disconnect(cid)
+    #fig.canvas.mpl_disconnect(cid)
     
     pos = klicker.get_positions()['pos']
     idx = np.array(pos[:,1],dtype='int')
