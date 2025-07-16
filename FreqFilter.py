@@ -58,11 +58,6 @@ def freqFilterChoose(data,harmonics,quiet=False):
     
     return filtData
 
-def onclick(event):
-    global offset
-    offset = 1
-    return 
-
 def getMask(Xdata,Ydata,title = 'Select measurements to omit'):
     """"Function to use to extract points for GVDcorrection. Only call on it's own if you want the points used for GVDcorrection.
     Returns a tuple of GVD points in energy and time"""
@@ -70,17 +65,7 @@ def getMask(Xdata,Ydata,title = 'Select measurements to omit'):
     axs.plot(Xdata,Ydata,'bo-')
     plt.title(title)
     klicker = clicker(axs,['xaxis'],markers=["x"],linestyle="-",colors=["red"])
-    plt.show()
-        
-    cid = fig.canvas.mpl_connect('close_event', onclick)
-    while not 'offset' in globals():
-        plt.pause(2)
-    
-    if 'offset' in globals():
-        global offset
-        del offset
-
-    fig.canvas.mpl_disconnect(cid)
+    plt.show(block=True)
     
     freq = klicker.get_positions()['xaxis']
     if len(freq)>0:
