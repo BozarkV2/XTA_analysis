@@ -188,11 +188,6 @@ def normBackSub(spectrum, bck,
     
     return normSpec
 
-def onclick(event):
-    global offset
-    offset = 1
-    return 
-
 def getHarmPos(Xdata,energy,title='Select harmonic peaks'):
     """"Function to use to extract points for GVDcorrection. Only call on it's own if you want the points used for GVDcorrection.
     Returns a tuple of GVD points in energy and time"""
@@ -200,17 +195,7 @@ def getHarmPos(Xdata,energy,title='Select harmonic peaks'):
     axs.plot(energy,Xdata)
     plt.title(title)
     klicker = clicker(axs,['pos'],markers=["x"],linestyle="-",colors=["red"])
-    plt.show()
-        
-    cid = fig.canvas.mpl_connect('close_event', onclick)
-    while not 'offset' in globals():
-        plt.pause(2)
-    
-    if 'offset' in globals():
-        global offset
-        del offset
-
-    fig.canvas.mpl_disconnect(cid)
+    plt.show(blocked=True)
     
     pos = klicker.get_positions()['pos']
     idx = np.array(pos[:,0])
