@@ -21,32 +21,40 @@ def pixelBin(speImage,cropROI = []):
     
     return tempBin
 
-def energyBin(spectrum, binParams,Eaxis=None):
+def energyBin(spectrum, binParams, fundamental = 1030, Eaxis=None):
     
     if type(binParams)==dict:
         binW = float(binParams['Ebins']['binW'])
+        if binParams['Ebins']['fundamental']:
+            fundamental = binParams['Ebins']['fundamental']
     else: #assume bin width is being passed in directly
         binW = binParams
     
     if Eaxis is None:
-        pixel = np.linspace(0, 1023,num=1024)
-        harmPos = getHarmPos(spectrum[0], pixel,'Select high then low energy harmonic')
+        pixel = np.arange(0, spectrum.shape[0], step=1)
+        harmPos = getHarmPos(spectrum[spectrum.shape[0]/2], pixel,'Select 72 eV, high to low energy harmonics, then 36 eV')
         harmMaxE = harmPos[0]
-        harmMinE = harmPos[1]
-        slope = (17.1-34.2)/(harmMaxE-harmMinE)
-        wavelengths = pixel*slope + (17.1 - slope*harmMaxE) 
-        energyCalib = 1239/wavelengths
+        harmMinE = harmPos[-1]
+        harmPeaks = harmPos[1:-1]
+        
+        energy = np.arange(start = len(harmPeaks)* 2*fundamental, stop = 0 , step = -2*fundamental)
+        energyCalib = np.polyfit(pixel[harmPeaks],energy,3)
+        energyCalib[-1] = 72 - np.polyval(energyCalib, harmMaxE) + energyCalib[-1]
+        
+        # slope = (17.1-34.2)/(harmMaxE-harmMinE)
+        # wavelengths = pixel*slope + (17.1 - slope*harmMaxE) 
+        # energyCalib = 1239/wavelengths
     else:
         pixel = np.linspace(0, 1023,num=1024)
         slope = (Eaxis[-1]-Eaxis[0])/(pixel[0] - pixel[-1])
         energyCalib = pixel*slope + Eaxis[-1]  
     
-    minE = np.min(energyCalib)
-    maxE = np.max(energyCalib)
+    minE = np.polyval(energyCalib, pixel[0])
+    maxE = np.polyval(energyCalib, pixel[-1])
 
     if binW == 0:
-        Eaxis = energyCalib  
-        Binaxis = energyCalib
+        Eaxis = np.polyval(energyCalib, pixel) 
+        Binaxis = np.polyval(energyCalib, pixel) 
     else:
         Eaxis = np.arange(start=minE,
                           stop=maxE,
@@ -56,7 +64,7 @@ def energyBin(spectrum, binParams,Eaxis=None):
                           stop=maxE+binW/2,
                           step=binW)
     
-    bins = digitize(energyCalib,Binaxis)
+    bins = digitize(np.polyval(energyCalib, pixel) ,Binaxis)
     
     if len(spectrum.shape)>1:
         spectraBin=np.zeros((Eaxis.shape[0],spectrum.shape[0]))
@@ -74,3 +82,4 @@ def energyBin(spectrum, binParams,Eaxis=None):
             stdBin[idx]= np.std(spectrum[0,bins == idx])
             
     return spectraBin, stdBin, Eaxis
+
