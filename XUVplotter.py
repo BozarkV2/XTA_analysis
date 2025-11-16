@@ -12,7 +12,9 @@ import math
 def plotXAS(XUVdata):
     
     data = XUVdata.aveHarmData
+    dataStd = XUVdata.dataStd
     ref = XUVdata.aveHarmRef
+    refStd = XUVdata.refStd
     absData = XUVdata.aveXAS
     std = XUVdata.aveXASstd
     energy = XUVdata.energy
@@ -20,7 +22,15 @@ def plotXAS(XUVdata):
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,sharey=False)
     # plt.ylabel("Counts")
     ax1.plot(energy,data,label = XUVdata.name)
+    ax1.fill_between(energy,
+                     data-dataStd,
+                     data+dataStd,
+                     alpha=0.2,color='r')
     ax1.plot(energy,ref, label = 'Reference')
+    ax1.fill_between(energy,
+                     ref-refStd,
+                     ref+refStd,
+                     alpha=0.2,color='b')
     ax1.set_xlabel(xlabel="Pixel",fontsize=18)
     ax1.set_ylabel(ylabel="Counts",fontsize=18)
     ax1.legend()
@@ -62,6 +72,7 @@ def plotXAShalf(XUVdata,percentile = 20):
     ax2.plot(energy,absDataUpper,label = "Average Upper Abs")
     ax2.set_xlabel(xlabel="Energy",fontsize=18)
     ax2.set_ylabel(ylabel="Absorbance",fontsize=18)
+    
     ax2.fill_between(energy,
                      absDataLower-stdLower,
                      absDataLower+stdLower,
@@ -94,12 +105,13 @@ def plotStats(XUVdata):
     ax2.legend()
     
     ax3 = ax2.twinx()
-    ax3.plot(Eaxis,XUVdata.aveHarmData,label='Data harmonic')
+    ax3.plot(Eaxis,XUVdata.aveHarmData,label='Data harmonic (right)')
     ax3.set_ylabel('Intensity (counts)')
     ax3.legend()
     
     fig2,ax4 = plt.subplots()
-    ax4.plot(XUVdata.intCnts)
+    ax4.plot(XUVdata.intCnts[0::2], label='Ref Counts')
+    ax4.plot(XUVdata.intCnts[1::2], label='Data Counts')
     
 def plotXTAdata(Xdata,color_min=None,color_max=None,fromGUI=False):
     """
@@ -132,12 +144,12 @@ def plotXTAdata(Xdata,color_min=None,color_max=None,fromGUI=False):
             color_min = -color_max
         else:
             color_max = abs(color_min)
-    
+
     fig1,ax1 = plt.subplots(1,1)
     
-    cax = ax1.imshow(Intensity,interpolation=None,
+    cax = ax1.imshow(Intensity.T,interpolation=None,
                vmin=color_min,vmax=color_max,
-               extent=[TimeAxis[0],TimeAxis[-1],energy[-1],energy[0]],
+               extent=[energy[-1],energy[0],TimeAxis[0],TimeAxis[-1]],
                cmap='bwr',aspect='auto')
     
     ax1.set_xlabel('Time (ps)')
@@ -216,15 +228,40 @@ def plotTimeMap(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
 def plotHarms(XUVdata):
     
     data = XUVdata.aveHarmData
+    dataStd = XUVdata.dataStd
     ref = XUVdata.aveHarmRef
+    refStd = XUVdata.refStd
     energy = XUVdata.energy
     
-    fig,ax1 = plt.subplots(1,1)
+    #Plot averaged harmonics and std
+    fig,(ax1,ax2) = plt.subplots(1,2, sharex=True)
     ax1.plot(energy,data,label='Data')
-    ax1.plot(energy,ref,label='Ref')
+    ax1.plot(energy,dataStd,label='Std')
     ax1.set_xlabel(xlabel="Energy",fontsize=18)
     ax1.set_ylabel(ylabel="Intensity",fontsize=18)
     ax1.legend()
+
+    ax2.plot(energy,ref,label='Ref')
+    ax2.plot(energy,refStd,label='Std')
+    ax2.set_xlabel(xlabel="Energy",fontsize=18)
+    ax2.set_ylabel(ylabel="Intensity",fontsize=18)
+    ax2.legend()
+    
+    #Plot each repetition in the form of a 2D map
+    fig2,(ax3, ax4) = plt.subplots(1,2,sharex=True)
+    ax3.imshow(XUVdata.data.T, interpolation=None,
+                vmin=0, vmax=np.max(data),
+                extent=[0,XUVdata.data.shape[1],energy[0],energy[-1]],
+                cmap='bwr',aspect='auto')
+    ax3.set_xlabel('Energy (eV)')
+    ax3.set_ylabel('Repetitions')
+    
+    ax4.imshow(XUVdata.ref.T, interpolation=None,
+                vmin=0, vmax=np.max(ref),
+                extent=[0,XUVdata.data.shape[1],energy[-1],energy[0]],
+                cmap='bwr',aspect='auto')
+    ax4.set_xlabel('Energy (eV)')
+    ax4.set_ylabel('Repetitions')
     
     return
     
@@ -580,4 +617,3 @@ def PlotMSS(XTAdata,time_points,norm = False,normW = 500,plotError = False):
 
 def get_cmap(i,name = 'hsv'):
     return plt.cm.get_cmap(name,i)
-

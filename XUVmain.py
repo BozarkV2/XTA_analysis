@@ -11,9 +11,10 @@ import matplotlib.pyplot as plt
 import os,time
 import os.path as pth
 import numpy as np
+import re, json
 from mpl_point_clicker import clicker 
 import read_SPE as spe
-from SPErebin import energyBin,pixelBin
+from SPErebin import energyBin,pixelBin, pixelRotBin
 from FluxNormalization import normHarms,normOddHarms,normHalfHarms,normHalfOddHarms
 from statMethods import fitPCA,airPCA
 
@@ -23,8 +24,11 @@ def init(DIRECTORY):
     'DIRECTORY':DIRECTORY, #Where is your data stored? Must be file path
     'all_subdirs':True, #Whether you want to import all directories in a folder
     'CropTF':False, #do you want to crop the y-axis of the images
+    'rotTF':False, #rotate the image to correct for harmonic angle
+    'rotD':0,
     'Eaxis':None, #give an energy array if you already have an energy axis on hand
-    'binW':0.2, #the energy bin width in eVs
+    'Ebins':{'binW':0.2, #the energy bin width in eVs
+             'fundamental':1030},
     'AlignE':False, #do you want to dynamically adjust the energy axis, primarily for ground states
     'NormFlux':False, #Do you want to normalize the flux between scans?
     'normBckTF':False, #Do you want to scale the background spectra to the data?
@@ -104,71 +108,166 @@ def mainMCD(initDict, XUVlist = None, refBack=None, dataBack=None,
 
 def importDir(initDict,subdirs=False):
     
-    if subdirs is True:
-        rawImgs=[]
-        if type(initDict) is dict:
-            for path in os.scandir(initDict['DIRECTORY']):
-                if path.is_dir():
-                    rawImgs.append(importDir(path))
-        else:
-            for path in os.scandir(initDict['DIRECTORY']):
-                if path.is_dir():
-                    rawImgs.append(importDir(path))
-        
     if type(initDict) is dict:
-        fileGen= (file for file in os.scandir(initDict['DIRECTORY']) 
-                  if file.path.endswith('.spe'))
-        if initDict['CropTF']:
-            cropList = []
-            cropTF = True
-        else:
-            cropList = [[],[]]
-            cropTF = False
-    else: 
-        fileGen = (file for file in os.scandir(initDict) 
-                   if file.path.endswith('.spe'))
-        cropList = [[],[]]
+        directory = initDict['DIRECTORY']
+        cropTF = initDict['CropTF']
+        rotation=initDict['rotTF']
+    else:
+        directory = initDict
         cropTF = False
-        
+        rotation = False
+    
     rawImgs = []
+    
+    if subdirs is True:
+        for path in os.scandir(directory):
+            if path.is_dir():
+                rawImgs.append(importDir(path))
+    
+    if cropTF:
+        cropList = []
+    
+    fileList=[]
+    
+    for file in os.scandir(directory):
+        if file.name.endswith('.spe') or file.name.endswith('.dat'):
+            fileList.append(file.path)
+              # if file.path.endswith('.spe')) #Removed for compatibility with NeXUS dat format
+    fileList.sort()
     idx=0
     
-    for file in fileGen:
-        print(file.name)
-        for data in spe.loadGen(file):
-            if cropTF and idx<2:
-                cropROI = getCropPos(data)
-                if idx ==0:
-                    cropList.append(cropROI)
-                elif idx ==1:
+    for file in fileList:
+        print(file)
+        if file.endswith('.spe'):
+            #spe contains multiple images per file
+            for data in spe.loadGen(file):
+                if cropTF and idx<2:
+                    cropROI = get2DPos(data, "Select Image Bounds")
                     cropList.append(cropROI)
             
-            rawImgs.append(pixelBin(data,
-                                    cropList[np.mod(idx,2)]))
+                if cropTF:
+            #choose croped image based on sample or ref image
+                    rawImgs.append(pixelBin(data,
+                                            cropList[np.mod(idx,2)])) 
+                elif rotation:
+                    rawImgs.append(pixelRotBin(data,-4))  
+                else:
+                    rawImgs.append(pixelBin(data))  
+                idx+=1
+        
+        elif file.endswith('.dat'):
+            data = np.loadtxt(file, skiprows=6, max_rows=1300)
+            if cropTF and idx<2:
+                cropROI = get2DPos(data, "Select Image Bounds")
+                cropList.append(cropROI)
+            
+            if cropTF:
+        #choose croped image based on sample or ref image
+                rawImgs.append(pixelBin(data,
+                                        cropList[np.mod(idx,2)])) 
+            elif rotation:
+                rawImgs.append(pixelRotBin(data.reshape(900,2048),initDict['rotD']))  
+                
+            else:
+               rawImgs.append(pixelBin(data))  
+            
             idx+=1
         
     return rawImgs
 
-def getCropPos(Xdata,title='Select harmonic peaks'):
-    """"Function to use to extract points for GVDcorrection. Only call on it's own if you want the points used for GVDcorrection.
-    Returns a tuple of GVD points in energy and time"""
+def importNexus(initDict, subdirs = False):
+    
+    if type(initDict) is dict:
+        directory = initDict['DIRECTORY']
+        cropTF = initDict['CropTF']
+        rotation=initDict['rotTF']
+    else:
+        directory = initDict
+        cropTF = False
+        rotation = False
+    
+    rawImgs = []
+    
+    if subdirs is True:
+        for path in os.scandir(directory):
+            if path.is_dir():
+                rawImgs.append(importNexus(path))
+    
+    if cropTF:
+        cropList = []
+    
+    fileList=[]
+    
+    for file in os.scandir(directory):
+        if file.name.endswith('.dat'):
+            fileList.append(file.path)
+              
+    fileList.sort()
+    header = []
+    xpos = []
+    ypos = []
+    delaypos = []
+    bckgDict = {}
+    
+    for file in fileList:
+        print(file)
+        
+        with open(file, 'r') as data:
+            img=[]
+            idx=1
+            for line in data:
+                if idx == 2:
+                    hdrDict = json.loads(line)
+                    header.append(hdrDict)
+                    xpos.append(hdrDict['Sample_Stage_xPosition'])
+                    ypos.append(hdrDict['Sample_Stage_yPosition'])
+                    delaypos.append(hdrDict['Delay_Stage_Position'])
+                    bckg = hdrDict['Corresponding_Background']
+                        
+                if idx >6 and re.match('\n', line):
+                    
+                    tempArr = np.asarray(img, np.float64)
+                    if bckg not in bckgDict:
+                        bckgDict[bckg] = pixelBin(np.loadtxt
+                                                  (os.path.split(os.path.split(file)[0])[0]+
+                                                   '\Background\\'+bckg, 
+                                                   skiprows=6,
+                                                   max_rows=tempArr.shape[0]))
+                        
+                    rawImgs.append(pixelBin(tempArr) - bckgDict[bckg])
+                    break
+                
+                if idx >6:    
+                    img.append(line.split('\t'))
+                
+                idx+=1
+        
+    return rawImgs, xpos, ypos, delaypos
+
+def get2DPos(Xdata,title='Select harmonic peaks'):
     fig,axs = plt.subplots()
     axs.imshow(Xdata)
     plt.title(title)
     klicker = clicker(axs,['pos'],markers=["x"],linestyle="-",colors=["red"])
     plt.show(block=True)
-        
-    #cid = fig.canvas.mpl_connect('close_event', onclick)
-    #while not 'offset' in globals():
-    #    plt.pause(2)
-    
-    #if 'offset' in globals():
-    #    global offset
-    #    del offset
-
-    #fig.canvas.mpl_disconnect(cid)
     
     pos = klicker.get_positions()['pos']
     idx = np.array(pos[:,1],dtype='int')
+    
+    return idx
+
+def get1DPos(Xdata,title='Select harmonic peaks', xaxis=None):
+    fig,axs = plt.subplots()
+    if xaxis is None:
+        axs.plot(Xdata)
+    else:
+        axs.plot(xaxis, Xdata)
+        
+    plt.title(title)
+    klicker = clicker(axs,['pos'],markers=["x"],linestyle="-",colors=["red"])
+    plt.show(block=True)
+    
+    pos = klicker.get_positions()['pos']
+    idx = np.array(pos[:,0])
     
     return idx

@@ -52,20 +52,20 @@ def fitPCA(data, ref, energy, components = 20,transAbs=None,
            time=None, pca=None, quiet=False):
     
     if time is not None:
-        ref3D = np.reshape(ref, (len(energy),
-                                  int(ref.shape[1]/len(time)),
-                                  len(time)))
-        tempOffAbs = -np.log10(np.abs(ref3D[:,0::2,:]/ref3D[:,1::2,:]))
-        pumpOffAbs = np.reshape(tempOffAbs, (len(energy),
-                                       int(ref.shape[1]/2)))
+       ref3D = np.reshape(ref, (len(energy),
+                                 int(ref.shape[1]/len(time)),
+                                 len(time)))
+       tempOffAbs = -np.log10(np.abs(ref3D[:,0::2,:]/ref3D[:,1::2,:]))
+       pumpOffAbs = np.reshape(tempOffAbs, (len(energy),
+                                      int(ref.shape[1]/2)))
     else:
-        pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
-    
+       pumpOffAbs = -np.log10(np.abs(ref[:,0::2]/ref[:,1::2]))
+       
     pcaOffAbs = np.where(np.logical_or(np.isnan(pumpOffAbs), 
                          np.isinf(pumpOffAbs)),
                          0, pumpOffAbs)
     
-    if transAbs is None:
+    if transAbs==None:
         tempAbs = -np.log10(np.abs(data/ref))
         transAbs = np.where(np.logical_or(np.isnan(tempAbs), 
                              np.isinf(tempAbs)),
@@ -85,11 +85,12 @@ def fitPCA(data, ref, energy, components = 20,transAbs=None,
     tempMask = np.ones(energy.shape)
     
     for x,y in zip(lowE,highE):
-        tempMask = np.where(np.logical_or((energy< x), (energy>y)) &
-                            tempMask,
+        tempMask = np.where(np.logical_and
+                            (np.logical_or((energy< x), (energy>y)),
+                            tempMask),
                             1,0)
 
-    W_k=np.diag(tempMask)
+    W_k=np.diag(tempMask)  
 
     C = np.linalg.inv(OD_PC.T.dot(W_k.dot(OD_PC))).dot(
         OD_PC.T).dot(W_k).dot(transAbs)
@@ -265,4 +266,3 @@ def PCAresid(params,data,n_comp,pca):
     return (data-model)**2
     
     
-

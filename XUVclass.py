@@ -34,7 +34,7 @@ class XUVimg():
 
 class XASdata():
     def __init__(self,XUVlist,dataBck=None,refBck=None,name=None,
-                 options=None, template = None):
+                 options=None, template=None):
         self.raw = np.asarray(XUVlist)
         self.name = name
         if template is not None:
@@ -56,7 +56,8 @@ class XASdata():
                 self.normFlux(options['normMethod'],spectrum=spectrum)
                 spectrum = self.normed
         
-        self.energyBin(spectrum=spectrum,dataBck=dataBck,refBck=refBck)
+        self.energyBin(spectrum=spectrum, binW = options['binW'], 
+                       dataBck=dataBck, refBck=refBck)
         self.separateData()
         self.calcAbs()
         self.averageXAS()
@@ -74,7 +75,7 @@ class XASdata():
             
         if dataBck is not None and refBck is not None:
             bckbin = energyBin(np.asarray([dataBck,refBck]),
-                               binW,self.energy)
+                               binW, self.energy)
             self.dataBck = bckbin[0][:,0]
             self.refBck = bckbin[0][:,1]
         else:
@@ -114,6 +115,8 @@ class XASdata():
         self.intCnts = np.sum(self.binned,axis=0)
         self.dataBase = np.nanmean(XUVabs(self.data[:,0::2],self.data[:,1::2]),axis=1)
         self.refBase = np.nanmean(XUVabs(self.ref[:,0::2],self.ref[:,1::2]),axis=1)
+        self.dataStd = np.nanstd(self.data,axis=1)
+        self.refStd = np.nanstd(self.ref,axis=1)
         
     def alignE(self,XUVlist):
         self.aligned = np.asarray(energyCorrect(XUVlist))
@@ -142,12 +145,26 @@ class XASdata():
         self.aveXASstd = np.nanstd(self.abs,axis=1)
         self.aveHarmData = np.nanmean(self.data,axis=1)
         self.aveHarmRef = np.nanmean(self.ref,axis=1)
+        
+    def harmonicAlignment(self):
+        pass
 
 class XTAdata():
     def __init__(self, XUVlist, time, options,
                  dataBck=None, refBck=None,
                  name = None, template = None):
-        self.raw = np.asarray(XUVlist)
+        
+        if type(XUVlist) == tuple:
+            self.raw = np.asarray(XUVlist[0])
+            self.xpos = XUVlist[1]
+            self.ypos = XUVlist[2]
+            self.delaypos = XUVlist[3]
+        else:
+            self.raw = np.asarray(XUVlist)
+            self.xpos = None
+            self.ypos = None
+            self.delaypos = None
+            
         self.name = name
         self.time = np.array(time)
         if template is not None:
@@ -196,14 +213,14 @@ class XTAdata():
     def energyBin(self, options,spectrum=None,
                   dataBck=None,refBck=None):
         
-        binW = options['binW']
+        binW = options['Ebins']['binW']
         Eaxis = options['Eaxis']
         if spectrum is None:
             self.binned, self.binstd, self.energy = energyBin(self.raw,
-                                                          binW, Eaxis)
+                                                          binW, Eaxis=Eaxis)
         else:
             self.binned, self.binstd, self.energy = energyBin(spectrum,
-                                                          binW, Eaxis)
+                                                          binW, Eaxis=Eaxis)
             
         if dataBck is not None and refBck is not None:
             bckbin = energyBin(np.asarray([dataBck,refBck]),
@@ -279,6 +296,10 @@ class XTAdata():
         self.intCnts = np.sum(self.binned,axis=0)
         self.harmStd = np.nanstd(self.data,axis=1)
         self.harm2Ddiff = self.data - self.aveHarmData[:,None,None]
+        self.dataBase = np.nanmean(XUVabs(self.data[:,0::2],self.data[:,1::2]),axis=1)
+        self.refBase = np.nanmean(XUVabs(self.ref[:,0::2],self.ref[:,1::2]),axis=1)
+        self.dataStd = np.nanstd(self.data,axis=1)
+        self.refStd = np.nanstd(self.ref,axis=1)
         
     def bckgSub(self):
         
@@ -341,7 +362,7 @@ class XMCDdata():
             self.separateData()
             self.calcTrans()
             
-        self.averageXTA()
+        self.averageMCD()
         self.scanStats()
         
     def energyBin(self, binW=0.2, spectrum=None,
@@ -405,7 +426,7 @@ class XMCDdata():
         self.trans2D = np.reshape(trans, (len(self.energy),
                                           int(self.data.shape[1])))
         
-    def averageXTA(self,outliers=False):
+    def averageMCD(self,outliers=False):
         self.MCD = np.nanmean(self.trans2D,axis=1)
         self.MCDstd = np.nanstd(self.trans2D,axis=1)/np.sqrt(self.trans2D.shape[1])
             
