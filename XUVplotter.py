@@ -101,7 +101,7 @@ def plotStats(XUVdata):
     fig2,ax4 = plt.subplots()
     ax4.plot(XUVdata.intCnts)
     
-def plotXTAdata(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
+def plotXTAdata(Xdata,color_min=None,color_max=None,fromGUI=False):
     """
     Plots a single XTA with variable color. If its an averaged dataset, will also plot standard deviation.
 
@@ -125,6 +125,14 @@ def plotXTAdata(Xdata,color_min=-0.05,color_max=0.05,fromGUI=False):
     Intensity = Xdata.trans2D
     std = Xdata.trans2Dstd
 
+    if color_max is None or color_min is None:
+        color_min = np.nanmin(Intensity)
+        color_max = np.nanmax(Intensity)
+        if color_max > abs(color_min):
+            color_min = -color_max
+        else:
+            color_max = abs(color_min)
+    
     fig1,ax1 = plt.subplots(1,1)
     
     cax = ax1.imshow(Intensity,interpolation=None,
@@ -572,3 +580,4 @@ def PlotMSS(XTAdata,time_points,norm = False,normW = 500,plotError = False):
 
 def get_cmap(i,name = 'hsv'):
     return plt.cm.get_cmap(name,i)
+
