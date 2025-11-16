@@ -82,11 +82,14 @@ def fitPCA(data, ref, energy, components = 20,transAbs=None,
     
     lowE = ROI[0::2]
     highE = ROI[1::2]
+    tempMask = np.ones(energy.shape)
     
     for x,y in zip(lowE,highE):
-        tempMask = np.where(np.logical_or((energy< x), (energy>y)),
+        tempMask = np.where(np.logical_or((energy< x), (energy>y)) &
+                            tempMask,
                             1,0)
-        W_k = np.diag(tempMask)    
+
+    W_k=np.diag(tempMask)
 
     C = np.linalg.inv(OD_PC.T.dot(W_k.dot(OD_PC))).dot(
         OD_PC.T).dot(W_k).dot(transAbs)
@@ -262,3 +265,4 @@ def PCAresid(params,data,n_comp,pca):
     return (data-model)**2
     
     
+
